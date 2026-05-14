@@ -1,0 +1,36 @@
+name: build-check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: build-check-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      # The cdylib `statsig_ffi` is what figma-release.yml ships. Building it
+      # transitively builds statsig-rust. Compile errors in either crate fail
+      # the PR before merge — catches things like the missing-field bug we
+      # hit in PR #7 (added a field to StatsigOptions but missed an
+      # exhaustive struct literal in statsig-ffi).
+      - name: cargo build --release -p statsig_ffi
+        env:
+          STATSIG_BUILD_PROTO: true
+        run: cargo build --release -p statsig_ffi
