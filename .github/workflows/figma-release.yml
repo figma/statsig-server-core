@@ -1,0 +1,44 @@
+name: figma-release
+
+on:
+  push:
+    tags: ['statsig-go/v*-figma*']
+
+permissions:
+  contents: write   # required to push commits + tags from the workflow
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cross-build statsig_ffi cdylib (linux-gnu/x86_64)
+        run: cross build --release --target x86_64-unknown-linux-gnu -p statsig_ffi
+
+      - name: Publish binaries module at paired tag
+        env:
+          SOURCE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Derive paired tag: statsig-go/X -> binaries-linux-gnu/X
+          PAIRED_TAG="binaries-linux-gnu/${SOURCE_TAG#statsig-go/}"
+
+          git config user.name  "figma-release-bot"
+          git config user.email "bot@figma.com"
+          git worktree add /tmp/release-tree HEAD
+          cd /tmp/release-tree
+
+          cp "$GITHUB_WORKSPACE/target/x86_64-unknown-linux-gnu/release/libstatsig_ffi.so" \
+             binaries-linux-gnu/linux_gnu_x86_64.so
+
+          git add binaries-linux-gnu/linux_gnu_x86_64.so
+          git commit -m "release: binaries-linux-gnu ${PAIRED_TAG}"
+          git tag "$PAIRED_TAG"
+          git push origin "$PAIRED_TAG"
