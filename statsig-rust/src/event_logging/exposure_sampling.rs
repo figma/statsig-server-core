@@ -8,7 +8,9 @@ use crate::{
 };
 use ahash::AHashSet;
 use chrono::Utc;
+use lru::LruCache;
 use parking_lot::RwLock;
+use std::num::NonZeroUsize;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
@@ -16,7 +18,7 @@ use std::sync::{
 
 const TAG: &str = "ExposureSampling";
 const DEFAULT_EXPOSURE_SAMPLING_TTL_MS: u64 = 60_000;
-const SAMPLING_MAX_KEYS: usize = 100_000;
+pub const SAMPLING_MAX_KEYS: usize = 100_000;
 
 #[derive(Debug)]
 pub enum EvtSamplingMode {
@@ -46,7 +48,12 @@ pub struct ExposureSampling {
     spec_sampling_set: RwLock<AHashSet<SpecAndRuleHashTuple>>,
     last_spec_sampling_reset: AtomicU64,
 
-    exposure_dedupe_set: RwLock<AHashSet<ExposureSamplingKey>>,
+    // Bounded LRU dedupe cache. Eviction at insert time guarantees a hard
+    // memory ceiling under adversarial per-request-unique user_id traffic.
+    // The cap is configurable via `StatsigOptions::exposure_dedupe_max_keys`
+    // (defaults to `SAMPLING_MAX_KEYS`).
+    exposure_dedupe_set: RwLock<LruCache<ExposureSamplingKey, ()>>,
+    exposure_dedupe_max_keys: NonZeroUsize,
     last_exposure_dedupe_reset: AtomicU64,
 
     global_configs: Arc<GlobalConfigs>,
@@ -54,13 +61,27 @@ pub struct ExposureSampling {
 
 impl ExposureSampling {
     pub fn new(sdk_key: &str) -> Self {
+        Self::with_max_keys(sdk_key, None)
+    }
+
+    pub fn with_max_keys(sdk_key: &str, max_keys: Option<usize>) -> Self {
         let now = Utc::now().timestamp_millis() as u64;
+
+        // Clamp user-provided value to a non-zero usize; fall back to the
+        // historical default `SAMPLING_MAX_KEYS` for `None` or `Some(0)`.
+        let cap = max_keys
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                NonZeroUsize::new(SAMPLING_MAX_KEYS)
+                    .expect("SAMPLING_MAX_KEYS must be non-zero")
+            });
 
         Self {
             spec_sampling_set: RwLock::from(AHashSet::default()),
             last_spec_sampling_reset: AtomicU64::from(now),
 
-            exposure_dedupe_set: RwLock::from(AHashSet::default()),
+            exposure_dedupe_set: RwLock::from(LruCache::new(cap)),
+            exposure_dedupe_max_keys: cap,
             last_exposure_dedupe_reset: AtomicU64::from(now),
 
             global_configs: GlobalConfigs::get_instance(sdk_key),
@@ -121,11 +142,14 @@ impl ExposureSampling {
 
     fn should_dedupe_exposure(&self, sampling_key: &ExposureSamplingKey) -> bool {
         let mut dedupe_set = write_lock_or_return!(TAG, self.exposure_dedupe_set, false);
-        if dedupe_set.contains(sampling_key) {
+        // `get` (rather than `contains`) bumps the entry's recency in the LRU.
+        if dedupe_set.get(sampling_key).is_some() {
             return true;
         }
 
-        dedupe_set.insert(sampling_key.clone());
+        // `put` evicts the least-recently-used entry once at capacity,
+        // bounding the dedupe cache regardless of incoming cardinality.
+        dedupe_set.put(sampling_key.clone(), ());
         false
     }
 
@@ -209,17 +233,15 @@ impl ExposureSampling {
             }
         };
 
+        // The LRU cap is the hard memory ceiling; this TTL-driven reset only
+        // exists to clear out stale entries so dedupe stays fresh. We replace
+        // the cache rather than calling `clear()` so any over-allocated
+        // backing storage (e.g. internal HashMap buckets) is also released.
         let has_expired = now - last_dedupe_reset > ttl_ms;
-        let is_full = dedupe_map.len() > SAMPLING_MAX_KEYS;
 
-        if has_expired || is_full {
-            log_d!(
-                TAG,
-                "Resetting exposure dedupe set. has_expired: {:?}, is_full: {:?}",
-                has_expired,
-                is_full
-            );
-            dedupe_map.clear();
+        if has_expired {
+            log_d!(TAG, "Resetting exposure dedupe set (ttl expired)");
+            *dedupe_map = LruCache::new(self.exposure_dedupe_max_keys);
             self.last_exposure_dedupe_reset
                 .store(now, Ordering::Relaxed);
         }

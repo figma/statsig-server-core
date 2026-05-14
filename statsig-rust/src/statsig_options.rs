@@ -44,6 +44,16 @@ pub struct StatsigOptions {
     pub event_logging_max_pending_batch_queue_size: Option<u32>,
     pub event_logging_max_queue_size: Option<u32>,
 
+    /// Hard upper bound on the number of unique `ExposureSamplingKey`s
+    /// retained in the exposure-dedupe LRU cache. Defaults to
+    /// `event_logging::exposure_sampling::SAMPLING_MAX_KEYS` (100_000).
+    ///
+    /// This bounds memory growth from per-request unique end-user IDs.
+    /// Lower it on memory-constrained workloads with high user cardinality;
+    /// raise it if you need a longer dedupe window. A value of `Some(0)`
+    /// is treated as "use the default".
+    pub exposure_dedupe_max_keys: Option<usize>,
+
     pub fallback_to_statsig_api: Option<bool>,
     pub global_custom_fields: Option<HashMap<String, DynamicValue>>,
 
@@ -184,6 +194,15 @@ impl StatsigOptionsBuilder {
     ) -> Self {
         self.inner.event_logging_max_pending_batch_queue_size =
             event_logging_max_pending_batch_queue_size;
+        self
+    }
+
+    #[must_use]
+    pub fn exposure_dedupe_max_keys(
+        mut self,
+        exposure_dedupe_max_keys: Option<usize>,
+    ) -> Self {
+        self.inner.exposure_dedupe_max_keys = exposure_dedupe_max_keys;
         self
     }
 
