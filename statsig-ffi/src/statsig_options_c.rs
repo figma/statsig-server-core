@@ -153,6 +153,7 @@ impl From<StatsigOptionsData> for StatsigOptions {
             event_logging_flush_interval_ms: None, // Deprecated
             event_logging_max_pending_batch_queue_size,
             event_logging_max_queue_size: data.event_logging_max_queue_size,
+            exposure_dedupe_max_keys: None,
             fallback_to_statsig_api: data.fallback_to_statsig_api,
             global_custom_fields: data.global_custom_fields,
             id_lists_adapter: None, // todo: add support for id lists adapter
