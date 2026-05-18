@@ -191,6 +191,23 @@ char *statsig_get_raw_feature_gate(uint64_t statsig_ref,
                                    const char *options_json,
                                    uint64_t *inout_result_len);
 
+/**
+ * Callback-style variant of statsig_get_raw_feature_gate. Avoids
+ * transferring an owned heap string across the FFI boundary by
+ * invoking `cb` with a borrowed UTF-8 slice while the Rust-side
+ * `FeatureGateRaw` is still alive. The callback's responsibility
+ * is to copy the bytes before returning.
+ *
+ * Safety contract: `cb` must not stash `ptr` beyond the callback's
+ * lifetime. `ctx` is opaque and is passed through unchanged.
+ */
+void statsig_get_raw_feature_gate_cb(uint64_t statsig_ref,
+                                     uint64_t user_ref,
+                                     const char *gate_name,
+                                     const char *options_json,
+                                     void (*cb)(const uint8_t *ptr, uint64_t len, void *ctx),
+                                     void *ctx);
+
 void statsig_manually_log_gate_exposure(uint64_t statsig_ref,
                                         uint64_t user_ref,
                                         const char *gate_name);

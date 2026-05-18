@@ -797,6 +797,37 @@ pub extern "C" fn statsig_get_raw_feature_gate(
     })
 }
 
+/// Callback-style variant of statsig_get_raw_feature_gate. Avoids
+/// transferring an owned heap string across the FFI boundary by
+/// invoking `cb` with a borrowed UTF-8 slice while the Rust-side
+/// `FeatureGateRaw` is still alive. The callback's responsibility
+/// is to copy the bytes before returning.
+///
+/// Safety contract: `cb` must not stash `ptr` beyond the callback's
+/// lifetime. `ctx` is opaque and is passed through unchanged.
+#[no_mangle]
+pub extern "C" fn statsig_get_raw_feature_gate_cb(
+    statsig_ref: u64,
+    user_ref: u64,
+    gate_name: *const c_char,
+    options_json: *const c_char,
+    cb: extern "C" fn(ptr: *const u8, len: u64, ctx: *mut std::ffi::c_void),
+    ctx: *mut std::ffi::c_void,
+) {
+    let statsig = get_instance_or_return_c!(Statsig, &statsig_ref, ());
+    let user = get_instance_or_return_c!(StatsigUser, &user_ref, ());
+    let gate_name = unwrap_or_return!(c_char_to_string(gate_name), ());
+
+    let options = c_char_to_string_non_empty(options_json)
+        .and_then(|opts| serde_json::from_str::<FeatureGateEvaluationOptions>(&opts).ok())
+        .unwrap_or_default();
+
+    statsig.use_raw_feature_gate_with_options(&user, gate_name.as_str(), options, |raw| {
+        let s = raw.unperformant_to_json_string();
+        cb(s.as_ptr(), s.len() as u64, ctx);
+    });
+}
+
 #[no_mangle]
 pub extern "C" fn statsig_manually_log_gate_exposure(
     statsig_ref: u64,

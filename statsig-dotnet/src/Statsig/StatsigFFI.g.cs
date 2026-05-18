@@ -130,6 +130,22 @@ namespace Statsig
         [DllImport(__DllName, EntryPoint = "statsig_get_raw_feature_gate", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern byte* statsig_get_raw_feature_gate(ulong statsig_ref, ulong user_ref, byte* gate_name, byte* options_json, ulong* inout_result_len);
 
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        internal delegate void statsig_get_raw_feature_gate_cb_cb_delegate(byte* ptr, ulong len, void* ctx);
+
+        /// <summary>
+        ///  Callback-style variant of statsig_get_raw_feature_gate. Avoids
+        ///  transferring an owned heap string across the FFI boundary by
+        ///  invoking `cb` with a borrowed UTF-8 slice while the Rust-side
+        ///  `FeatureGateRaw` is still alive. The callback's responsibility
+        ///  is to copy the bytes before returning.
+        ///
+        ///  Safety contract: `cb` must not stash `ptr` beyond the callback's
+        ///  lifetime. `ctx` is opaque and is passed through unchanged.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "statsig_get_raw_feature_gate_cb", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern void statsig_get_raw_feature_gate_cb(ulong statsig_ref, ulong user_ref, byte* gate_name, byte* options_json, statsig_get_raw_feature_gate_cb_cb_delegate cb, void* ctx);
+
         [DllImport(__DllName, EntryPoint = "statsig_manually_log_gate_exposure", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern void statsig_manually_log_gate_exposure(ulong statsig_ref, ulong user_ref, byte* gate_name);
 

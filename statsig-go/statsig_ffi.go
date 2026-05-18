@@ -37,6 +37,7 @@ type StatsigFFI struct {
 	statsig_check_gate                 func(uint64, uint64, string, string) bool
 	statsig_check_gate_performance     func(uint64, uint64, string, uint, string, uint) bool
 	statsig_get_raw_feature_gate       func(uint64, uint64, string, string, *uint64) *byte
+	statsig_get_raw_feature_gate_cb    func(uint64, uint64, string, string, uintptr, uintptr)
 	statsig_manually_log_gate_exposure func(uint64, uint64, string)
 
 	// Dynamic Configs
@@ -160,6 +161,7 @@ func GetFFI() *StatsigFFI {
 		purego.RegisterLibFunc(&instance.statsig_check_gate_performance, lib, "statsig_check_gate_performance")
 		purego.RegisterLibFunc(&instance.statsig_manually_log_gate_exposure, lib, "statsig_manually_log_gate_exposure")
 		purego.RegisterLibFunc(&instance.statsig_get_raw_feature_gate, lib, "statsig_get_raw_feature_gate")
+		purego.RegisterLibFunc(&instance.statsig_get_raw_feature_gate_cb, lib, "statsig_get_raw_feature_gate_cb")
 
 		// Dynamic Configs
 		purego.RegisterLibFunc(&instance.statsig_manually_log_dynamic_config_exposure, lib, "statsig_manually_log_dynamic_config_exposure")
