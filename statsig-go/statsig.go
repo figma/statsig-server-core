@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"runtime"
 	"sync/atomic"
+	"unsafe"
+
+	"github.com/ebitengine/purego"
 
 	"log"
 )
@@ -116,13 +119,29 @@ func (s *Statsig) GetFeatureGateWithOptions(user *StatsigUser, gateName string, 
 		return gate
 	}
 
-	gateJson := UseRustString(func() (*byte, uint64) {
-		len := uint64(0)
-		ptr := GetFFI().statsig_get_raw_feature_gate(s.ref.Load(), user.ref, gateName, optionsJson, &len)
-		return ptr, len
+	// Fix C: JNI-style callback FFI. The Rust side invokes the
+	// callback with a borrowed slice while FeatureGateRaw is still
+	// alive; we copy the bytes into a Go-owned string inside the
+	// callback. No heap transfer of *mut c_char across the FFI
+	// boundary, no *mut u64 inout writeback, no free_string round
+	// trip.
+	var out string
+	var got bool
+	cb := purego.NewCallback(func(ptr *byte, n uint64, _ uintptr) uintptr {
+		if ptr != nil && n > 0 && n <= 16<<20 {
+			out = string(unsafe.Slice(ptr, n))
+			got = true
+		}
+		return 0
 	})
+	GetFFI().statsig_get_raw_feature_gate_cb(
+		s.ref.Load(), user.ref, gateName, optionsJson, cb, 0,
+	)
+	if !got {
+		return gate
+	}
 
-	if err := json.Unmarshal([]byte(*gateJson), &gate); err != nil {
+	if err := json.Unmarshal([]byte(out), &gate); err != nil {
 		fmt.Printf("Failed to unmarshal FeatureGate: %v", err)
 	}
 
