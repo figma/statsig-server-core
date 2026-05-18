@@ -223,13 +223,13 @@ func GetFFI() *StatsigFFI {
 }
 
 func UseRustString(handler func() (*byte, uint64)) *string {
-	ptr, length := handler()
+	ptr, _ := handler()
 	if ptr == nil {
 		return nil
 	}
 
 	defer instance.free_string(ptr)
-	return internal.GoStringFromPointer(ptr, length)
+	return internal.UnperformantGoStringFromPointer(ptr)
 }
 
 func (ffi *StatsigFFI) updateStatsigMetadata() {
