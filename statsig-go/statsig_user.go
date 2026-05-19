@@ -102,9 +102,10 @@ func (b *StatsigUserBuilder) Build() (*StatsigUser, error) {
 		return nil, fmt.Errorf("error marshalling user: %v", err)
 	}
 
-	userRef := GetFFI().statsig_user_create_from_data(
-		string(jsonData),
-	)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	userRef := ffi.statsig_user_create_from_data(string(jsonData))
+	ffi.mu.Unlock()
 
 	if userRef == 0 {
 		return nil, fmt.Errorf("error creating StatsigUser")
@@ -115,7 +116,10 @@ func (b *StatsigUserBuilder) Build() (*StatsigUser, error) {
 	}
 
 	runtime.SetFinalizer(user, func(obj *StatsigUser) {
-		GetFFI().statsig_user_release(obj.ref)
+		ffi := GetFFI()
+		ffi.mu.Lock()
+		ffi.statsig_user_release(obj.ref)
+		ffi.mu.Unlock()
 	})
 
 	return user, nil

@@ -13,6 +13,43 @@ import (
 type StatsigFFI struct {
 	lib uintptr
 
+	// mu serializes every purego-dispatched call from this binding.
+	//
+	// Why: purego's reflect-based call wrapper (`func.go`) shares a
+	// process-wide `sync.Pool` of `*syscall15Args` across concurrent
+	// dispatches. When two goroutines are inside that wrapper at the
+	// same time, the return value of one call can land in the other
+	// goroutine's read of `syscall.a1` — i.e. two FFI calls' return
+	// pointers get swapped between callers.
+	//
+	// Symptoms downstream:
+	//   - SIGSEGV in runtime.memmove on a non-canonical pointer (a
+	//     `*c_char` from a different call than the one Go thinks it's
+	//     reading)
+	//   - SIGSEGV nil-deref at the `*gateJson` deref in
+	//     GetFeatureGateWithOptions
+	//   - glibc `double free or corruption (out)` when two callers
+	//     both try to free the same buffer
+	//   - Silently-wrong gate / config / experiment results — the FFI
+	//     for one call returns data shaped like a sibling call's
+	//
+	// Repro and discrimination matrix:
+	//   github.com/figma/statsig-server-core/... (TODO: tracking issue)
+	// Upstream: ebitengine/purego — TODO file issue, link here.
+	//
+	// Lock scope: held only across the C-side dispatch (and any
+	// surrounding bookkeeping that hits FFI, e.g. `free_string`).
+	// JSON marshal/unmarshal on the Go side is intentionally outside
+	// the critical section. Per-call hold time is microseconds on the
+	// hot path.
+	//
+	// Lock-ordering: callbacks registered via `RegisterFunc` (data
+	// store, observability client, persistent storage) MUST NOT take
+	// `mu` if there is any chance the Rust side invokes them
+	// synchronously from inside an FFI call this binding has dispatched
+	// (would self-deadlock).
+	mu sync.Mutex
+
 	// StatsigOptions
 	statsig_options_create_from_data func(string) uint64
 	statsig_options_release          func(uint64)
@@ -223,13 +260,19 @@ func GetFFI() *StatsigFFI {
 }
 
 func UseRustString(handler func() (*byte, uint64)) *string {
+	// Hold the FFI mutex across both the C-string-returning dispatch
+	// (inside handler) AND the matching free_string. See the comment
+	// on StatsigFFI.mu for why this is required.
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
+
 	ptr, length := handler()
 	if ptr == nil {
 		return nil
 	}
-
-	defer instance.free_string(ptr)
-	return internal.GoStringFromPointer(ptr, length)
+	s := internal.GoStringFromPointer(ptr, length)
+	instance.free_string(ptr)
+	return s
 }
 
 func (ffi *StatsigFFI) updateStatsigMetadata() {
