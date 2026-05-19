@@ -22,7 +22,10 @@ type Statsig struct {
 }
 
 func NewStatsig(sdkKey string) (*Statsig, error) {
-	ref := GetFFI().statsig_create(sdkKey, 0)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ref := ffi.statsig_create(sdkKey, 0)
+	ffi.mu.Unlock()
 	if ref == 0 {
 		return nil, fmt.Errorf("error creating Statsig instance")
 	}
@@ -38,7 +41,10 @@ func NewStatsig(sdkKey string) (*Statsig, error) {
 }
 
 func NewStatsigWithOptions(sdkKey string, opts *StatsigOptions) (*Statsig, error) {
-	ref := GetFFI().statsig_create(sdkKey, opts.ref)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ref := ffi.statsig_create(sdkKey, opts.ref)
+	ffi.mu.Unlock()
 	if ref == 0 {
 		return nil, fmt.Errorf("error creating Statsig instance")
 	}
@@ -66,15 +72,24 @@ func (s *Statsig) NewUserBuilderWithCustomIDs(customIDs map[string]any) *Statsig
 }
 
 func (s *Statsig) Initialize() {
-	GetFFI().statsig_initialize_blocking(s.ref.Load())
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.statsig_initialize_blocking(s.ref.Load())
+	ffi.mu.Unlock()
 }
 
 func (s *Statsig) Shutdown() {
-	GetFFI().statsig_shutdown_blocking(s.ref.Load())
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.statsig_shutdown_blocking(s.ref.Load())
+	ffi.mu.Unlock()
 }
 
 func (s *Statsig) FlushEvents() {
-	GetFFI().statsig_flush_events_blocking(s.ref.Load())
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.statsig_flush_events_blocking(s.ref.Load())
+	ffi.mu.Unlock()
 }
 
 func (s *Statsig) LogEvent(user *StatsigUser, event EventPayload) {
@@ -83,8 +98,10 @@ func (s *Statsig) LogEvent(user *StatsigUser, event EventPayload) {
 		log.Printf("Failed to marshal Statsig event: %v", err)
 		return
 	}
-
-	GetFFI().statsig_log_event(s.ref.Load(), user.ref, string(eventJson))
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.statsig_log_event(s.ref.Load(), user.ref, string(eventJson))
+	ffi.mu.Unlock()
 }
 
 func (s *Statsig) CheckGate(user *StatsigUser, gateName string) bool {
@@ -97,8 +114,11 @@ func (s *Statsig) CheckGateWithOptions(user *StatsigUser, gateName string, optio
 		fmt.Printf("Failed to marshal FeatureGateEvaluationOptions: %v", err)
 		return false
 	}
-
-	return GetFFI().statsig_check_gate(s.ref.Load(), user.ref, gateName, optionsJson)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	result := ffi.statsig_check_gate(s.ref.Load(), user.ref, gateName, optionsJson)
+	ffi.mu.Unlock()
+	return result
 }
 
 func (s *Statsig) GetFeatureGate(user *StatsigUser, gateName string) FeatureGate {
@@ -300,19 +320,31 @@ func (s *Statsig) GetClientInitResponseWithOptions(user *StatsigUser, options *C
 }
 
 func (s *Statsig) ManuallyLogFeatureGateExposure(user *StatsigUser, gateName string) {
-	GetFFI().statsig_manually_log_gate_exposure(s.ref.Load(), user.ref, gateName)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.statsig_manually_log_gate_exposure(s.ref.Load(), user.ref, gateName)
+	ffi.mu.Unlock()
 }
 
 func (s *Statsig) ManuallyLogDynamicConfigExposure(user *StatsigUser, configName string) {
-	GetFFI().statsig_manually_log_dynamic_config_exposure(s.ref.Load(), user.ref, configName)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.statsig_manually_log_dynamic_config_exposure(s.ref.Load(), user.ref, configName)
+	ffi.mu.Unlock()
 }
 
 func (s *Statsig) ManuallyLogExperimentExposure(user *StatsigUser, experimentName string) {
-	GetFFI().statsig_manually_log_experiment_exposure(s.ref.Load(), user.ref, experimentName)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.statsig_manually_log_experiment_exposure(s.ref.Load(), user.ref, experimentName)
+	ffi.mu.Unlock()
 }
 
 func (s *Statsig) ManuallyLogLayerParamExposure(user *StatsigUser, layerName string, paramName string) {
-	GetFFI().statsig_manually_log_layer_parameter_exposure(s.ref.Load(), user.ref, layerName, paramName)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.statsig_manually_log_layer_parameter_exposure(s.ref.Load(), user.ref, layerName, paramName)
+	ffi.mu.Unlock()
 }
 
 func (s *Statsig) release() {
@@ -320,8 +352,10 @@ func (s *Statsig) release() {
 	if was == 0 {
 		return
 	}
-
-	GetFFI().statsig_release(was)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.statsig_release(was)
+	ffi.mu.Unlock()
 }
 
 func tryMarshalOrEmpty[T any](data *T) (string, error) {

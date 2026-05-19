@@ -155,9 +155,10 @@ func (o *StatsigOptionsBuilder) Build() (*StatsigOptions, error) {
 		return nil, err
 	}
 
-	ref := GetFFI().statsig_options_create_from_data(
-		string(data),
-	)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ref := ffi.statsig_options_create_from_data(string(data))
+	ffi.mu.Unlock()
 
 	if ref == 0 {
 		return nil, fmt.Errorf("failed to create StatsigOptions")
@@ -169,7 +170,10 @@ func (o *StatsigOptionsBuilder) Build() (*StatsigOptions, error) {
 	}
 
 	runtime.SetFinalizer(options, func(obj *StatsigOptions) {
-		GetFFI().statsig_options_release(obj.ref)
+		ffi := GetFFI()
+		ffi.mu.Lock()
+		ffi.statsig_options_release(obj.ref)
+		ffi.mu.Unlock()
 	})
 
 	return options, nil

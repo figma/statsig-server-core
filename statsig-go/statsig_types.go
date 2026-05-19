@@ -146,7 +146,10 @@ func (l *Layer) UnmarshalJSON(b []byte) error {
 }
 
 func (l *Layer) logExposure(key string) {
-	GetFFI().log_layer_param_exposure_from_raw(l.statsigRef, l.rawJson, key)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.log_layer_param_exposure_from_raw(l.statsigRef, l.rawJson, key)
+	ffi.mu.Unlock()
 }
 
 // ------------------------------------------------------------------------------------- [ Parameter Store ]
@@ -184,40 +187,52 @@ func (p *ParameterStore) GetString(key string, fallback string) string {
 
 func (p *ParameterStore) GetBool(key string, fallback bool) bool {
 	return parameterStoreValue(p, fallback, func(optionsJson string) (bool, bool) {
-		return GetFFI().statsig_get_bool_parameter_from_parameter_store(
+		ffi := GetFFI()
+		ffi.mu.Lock()
+		v := ffi.statsig_get_bool_parameter_from_parameter_store(
 			p.statsigRef,
 			p.userRef,
 			p.Name,
 			key,
 			safeOptBool(fallback),
 			optionsJson,
-		), true
+		)
+		ffi.mu.Unlock()
+		return v, true
 	})
 }
 
 func (p *ParameterStore) GetNumber(key string, fallback float64) float64 {
 	return parameterStoreValue(p, fallback, func(optionsJson string) (float64, bool) {
-		return GetFFI().statsig_get_float64_parameter_from_parameter_store(
+		ffi := GetFFI()
+		ffi.mu.Lock()
+		v := ffi.statsig_get_float64_parameter_from_parameter_store(
 			p.statsigRef,
 			p.userRef,
 			p.Name,
 			key,
 			fallback,
 			optionsJson,
-		), true
+		)
+		ffi.mu.Unlock()
+		return v, true
 	})
 }
 
 func (p *ParameterStore) GetInt(key string, fallback int64) int64 {
 	return parameterStoreValue(p, fallback, func(optionsJson string) (int64, bool) {
-		return GetFFI().statsig_get_int_parameter_from_parameter_store(
+		ffi := GetFFI()
+		ffi.mu.Lock()
+		v := ffi.statsig_get_int_parameter_from_parameter_store(
 			p.statsigRef,
 			p.userRef,
 			p.Name,
 			key,
 			fallback,
 			optionsJson,
-		), true
+		)
+		ffi.mu.Unlock()
+		return v, true
 	})
 }
 

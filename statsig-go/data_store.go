@@ -27,7 +27,9 @@ func NewDataStore(functions DataStoreFunctions) *DataStore {
 		ref:       0,
 	}
 
-	store.ref = GetFFI().data_store_create(
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	store.ref = ffi.data_store_create(
 		store.functions.Initialize,
 		store.functions.Shutdown,
 		// Get
@@ -63,16 +65,24 @@ func NewDataStore(functions DataStoreFunctions) *DataStore {
 			return store.functions.ShouldBeUsedForQueryingUpdates(*keyStr)
 		},
 	)
+	ffi.mu.Unlock()
 
 	runtime.SetFinalizer(store, func(obj *DataStore) {
-		GetFFI().data_store_release(obj.ref)
+		ffi := GetFFI()
+		ffi.mu.Lock()
+		ffi.data_store_release(obj.ref)
+		ffi.mu.Unlock()
 	})
 
 	return store
 }
 
 func (d *DataStore) INTERNAL_testDataStore(path string, value string) string {
-	return GetFFI().__internal__test_data_store(d.ref, path, value)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	r := ffi.__internal__test_data_store(d.ref, path, value)
+	ffi.mu.Unlock()
+	return r
 }
 
 type dataStoreSetArgs struct {

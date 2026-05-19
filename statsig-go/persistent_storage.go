@@ -52,7 +52,9 @@ func NewPersistentStorage(functions PersistentStorageFunctions) *PersistentStora
 		ref:       0,
 	}
 
-	storage.ref = GetFFI().persistent_storage_create(
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	storage.ref = ffi.persistent_storage_create(
 		"go",
 		// Load
 		func(argsPtr *byte, argsLength uint64) *byte {
@@ -100,16 +102,24 @@ func NewPersistentStorage(functions PersistentStorageFunctions) *PersistentStora
 			storage.functions.Delete(data.Key, data.ConfigName)
 		},
 	)
+	ffi.mu.Unlock()
 
 	runtime.SetFinalizer(storage, func(obj *PersistentStorage) {
-		GetFFI().persistent_storage_release(obj.ref)
+		ffi := GetFFI()
+		ffi.mu.Lock()
+		ffi.persistent_storage_release(obj.ref)
+		ffi.mu.Unlock()
 	})
 
 	return storage
 }
 
 func (c *PersistentStorage) INTERNAL_testPersistentStorage(action string, key string, configName string, data string) string {
-	return GetFFI().__internal__test_persistent_storage(c.ref, action, key, configName, data)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	r := ffi.__internal__test_persistent_storage(c.ref, action, key, configName, data)
+	ffi.mu.Unlock()
+	return r
 }
 
 func tryMarshalPersistentStorageArgs(inputPtr *byte, inputLength uint64) (*persistentStorageArgs, error) {

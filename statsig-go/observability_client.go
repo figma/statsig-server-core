@@ -39,7 +39,9 @@ func NewObservabilityClient(functions ObservabilityClientFunctions) *Observabili
 		ref:       0,
 	}
 
-	client.ref = GetFFI().observability_client_create(
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	client.ref = ffi.observability_client_create(
 		client.functions.Init,
 		// Increment
 		func(argsPtr *byte, argsLength uint64) {
@@ -84,16 +86,23 @@ func NewObservabilityClient(functions ObservabilityClientFunctions) *Observabili
 			return client.functions.ShouldEnableHighCardinalityForThisTag(*tag)
 		},
 	)
+	ffi.mu.Unlock()
 
 	runtime.SetFinalizer(client, func(obj *ObservabilityClient) {
-		GetFFI().observability_client_release(obj.ref)
+		ffi := GetFFI()
+		ffi.mu.Lock()
+		ffi.observability_client_release(obj.ref)
+		ffi.mu.Unlock()
 	})
 
 	return client
 }
 
 func (c *ObservabilityClient) INTERNAL_testObservabilityClient(action string, metricName string, value float64, tags string) {
-	GetFFI().__internal__test_observability_client(c.ref, action, metricName, value, tags)
+	ffi := GetFFI()
+	ffi.mu.Lock()
+	ffi.__internal__test_observability_client(c.ref, action, metricName, value, tags)
+	ffi.mu.Unlock()
 }
 
 func tryMarshalStandardArgs(inputPtr *byte, inputLength uint64) (*obsClientArgs, error) {
