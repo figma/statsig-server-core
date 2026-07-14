@@ -144,6 +144,11 @@ func (o *StatsigOptionsBuilder) WithPersistentStorage(persistentStorage *Persist
 	return o
 }
 
+func (o *StatsigOptionsBuilder) WithObservabilityClient(observabilityClient *ObservabilityClient) *StatsigOptionsBuilder {
+	o.ObservabilityClientRef = &observabilityClient.ref
+	return o
+}
+
 func (o *StatsigOptionsBuilder) WithAllowNilUserID(allow bool) *StatsigOptionsBuilder {
 	o.AllowNilUserID = allow
 	return o
