@@ -37,7 +37,10 @@ func NewDataStore(functions DataStoreFunctions) *DataStore {
 				return nil
 			}
 
-			result := []byte(store.functions.Get(*keyStr))
+			// Rust reads this back with CStr::from_ptr, so it must be
+			// NUL-terminated. The terminator also keeps the slice non-empty,
+			// so a "" from the adapter no longer panics on &result[0].
+			result := append([]byte(store.functions.Get(*keyStr)), 0)
 			return &result[0]
 		},
 		// Set
