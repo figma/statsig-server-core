@@ -8,7 +8,7 @@ use statsig_rust::{
     log_d, log_e, InstanceRegistry, StatsigErr, StatsigRuntime,
 };
 
-use crate::ffi_utils::{c_char_to_string, free_string, string_to_c_char};
+use crate::ffi_utils::{c_char_to_string, string_to_c_char};
 
 const TAG: &str = "DataStoreC";
 
@@ -156,12 +156,7 @@ impl DataStoreTrait for DataStoreC {
             ));
         }
 
-        // string_to_c_char hands ownership to the caller via CString::into_raw,
-        // so the key has to come back to us once the callback has copied it.
-        let raw = (self.get_fn)(key, key_len);
-        free_string(key);
-
-        let raw_result = match c_char_to_string(raw) {
+        let raw_result = match c_char_to_string((self.get_fn)(key, key_len)) {
             Some(result) => result,
             None => {
                 return Err(StatsigErr::DataStoreFailure(
@@ -200,11 +195,6 @@ impl DataStoreTrait for DataStoreC {
 
         (self.set_fn)(args_cstr, args_len);
 
-        // args_json is the full serialized specs, ~18MB for a large project,
-        // and into_raw leaked all of it on every write. SpecStore writes on
-        // the specs sync timer, so the leak compounds for the process lifetime.
-        free_string(args_cstr);
-
         Ok(())
     }
 
@@ -218,9 +208,7 @@ impl DataStoreTrait for DataStoreC {
             return false;
         }
 
-        let supported = (self.support_polling_updates_for_fn)(path, path_len);
-        free_string(path);
-        supported
+        (self.support_polling_updates_for_fn)(path, path_len)
     }
 }
 

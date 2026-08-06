@@ -32,6 +32,11 @@ func NewDataStore(functions DataStoreFunctions) *DataStore {
 		store.functions.Shutdown,
 		// Get
 		func(argPtr *byte, argLength uint64) *byte {
+			// The core hands these args over via CString::into_raw, so the
+			// callback owns them. statsig-dotnet frees them the same way in
+			// its finally blocks; Go was the binding that never did.
+			defer GetFFI().free_string(argPtr)
+
 			keyStr := internal.GoStringFromPointer(argPtr, argLength)
 			if keyStr == nil {
 				return nil
@@ -45,6 +50,10 @@ func NewDataStore(functions DataStoreFunctions) *DataStore {
 		},
 		// Set
 		func(argPtr *byte, argLength uint64) {
+			// args_json here is the full serialized specs, ~18MB for a large
+			// project, leaked once per write until this freed it.
+			defer GetFFI().free_string(argPtr)
+
 			data, err := tryMarshalDataStoreSetArgs(argPtr, argLength)
 			if err != nil {
 				fmt.Println("Error marshalling DataStore 'set' args", err)
@@ -58,6 +67,8 @@ func NewDataStore(functions DataStoreFunctions) *DataStore {
 		},
 		// ShouldBeUsedForQueryingUpdates
 		func(argPtr *byte, argLength uint64) bool {
+			defer GetFFI().free_string(argPtr)
+
 			keyStr := internal.GoStringFromPointer(argPtr, argLength)
 			if keyStr == nil {
 				return false
