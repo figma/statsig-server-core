@@ -311,6 +311,14 @@ impl StatsigDataStoreSpecsAdapter {
             }
         };
 
+        // start() rejects an empty result rather than forwarding it. Without the
+        // same check here, unwrap_or_default() below turns it into an empty body
+        // that set_values can only fail to deserialize, once per tick.
+        if update.result.is_none() {
+            log_w!(TAG, "Data store returned no specs. Keeping current values");
+            return;
+        }
+
         let read_lock = read_lock_or_else!(self.listener, {
             log_w!(TAG, "Unable to acquire read lock on listener");
             return;
