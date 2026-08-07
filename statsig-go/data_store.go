@@ -2,8 +2,10 @@ package statsig_go_core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
+	"unsafe"
 
 	"github.com/statsig-io/statsig-go-core/internal"
 )
@@ -96,11 +98,15 @@ type dataStoreSetArgs struct {
 }
 
 func tryMarshalDataStoreSetArgs(inputPtr *byte, inputLength uint64) (*dataStoreSetArgs, error) {
-	data := internal.GoStringFromPointer(inputPtr, inputLength)
+	if inputPtr == nil {
+		return nil, errors.New("nil data store set args")
+	}
 
+	// Decode straight out of the C buffer. json.Unmarshal neither retains nor
+	// mutates its input and the decoded fields are Go-owned copies, so this
+	// skips two full-size copies of args_json - ~18MB each on our specs.
 	var args dataStoreSetArgs
-	err := json.Unmarshal([]byte(*data), &args)
-	if err != nil {
+	if err := json.Unmarshal(unsafe.Slice(inputPtr, inputLength), &args); err != nil {
 		return nil, err
 	}
 
