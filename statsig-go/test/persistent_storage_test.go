@@ -2,6 +2,9 @@ package test
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -170,5 +173,109 @@ func createTestStickyValues() statsig_go.StickyValues {
 		Time:                          time.Now().Unix(),
 		ConfigDelegate:                &configDelegate,
 		ExplicitParameters:            &explicitParameters,
+	}
+}
+
+type concurrentPersistentStorage struct {
+	mu     sync.Mutex
+	values map[string]statsig_go.UserPersistedValues
+}
+
+func (m *concurrentPersistentStorage) Load(key string) *statsig_go.UserPersistedValues {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	values, ok := m.values[key]
+	if !ok {
+		return nil
+	}
+
+	return &values
+}
+
+func (m *concurrentPersistentStorage) Save(key string, configName string, data statsig_go.StickyValues) {
+}
+
+func (m *concurrentPersistentStorage) Delete(key string, configName string) {}
+
+func (m *concurrentPersistentStorage) GetFunctions() statsig_go.PersistentStorageFunctions {
+	return statsig_go.PersistentStorageFunctions{
+		Load:   m.Load,
+		Save:   m.Save,
+		Delete: m.Delete,
+	}
+}
+
+// Load runs synchronously during evaluation, so the core can be inside several
+// load callbacks at once. Each caller has to get back its own result.
+func TestPersistentStorageConcurrentLoads(t *testing.T) {
+	const (
+		goroutines = 8
+		perRoutine = 100
+	)
+
+	mock := &concurrentPersistentStorage{values: map[string]statsig_go.UserPersistedValues{}}
+	for i := range goroutines {
+		sticky := createTestStickyValues()
+		sticky.RuleID = fmt.Sprintf("rule_%d", i)
+		mock.values[fmt.Sprintf("user_%d", i)] = statsig_go.UserPersistedValues{
+			"test_load": sticky,
+		}
+	}
+
+	client := statsig_go.NewPersistentStorage(mock.GetFunctions())
+
+	var wg sync.WaitGroup
+	for i := range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			key := fmt.Sprintf("user_%d", i)
+			wantRuleID := fmt.Sprintf("rule_%d", i)
+
+			for range perRoutine {
+				raw := client.INTERNAL_testPersistentStorage("load", key, "", "")
+
+				values := map[string]statsig_go.StickyValues{}
+				if err := json.Unmarshal([]byte(raw), &values); err != nil {
+					t.Errorf("Could not parse load result for %s: %v", key, err)
+					return
+				}
+
+				if values["test_load"].RuleID != wantRuleID {
+					t.Errorf(
+						"Load for %s read back %q, want %q",
+						key,
+						values["test_load"].RuleID,
+						wantRuleID,
+					)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// The core hands the save args over with CString::into_raw and never reclaims
+// them, so the callback has to free them.
+func TestPersistentStorageSaveArgsAreNotLeaked(t *testing.T) {
+	mock := &mockPersistentStorage{}
+	client := statsig_go.NewPersistentStorage(mock.GetFunctions())
+
+	sticky := createTestStickyValues()
+	sticky.JSONValue = map[string]string{"header_text": strings.Repeat("a", leakTestPayloadBytes)}
+	data, err := json.Marshal(sticky)
+	if err != nil {
+		t.Fatalf("Could not serialize sticky values: %v", err)
+	}
+
+	growth := measureRssGrowth(t, func() {
+		client.INTERNAL_testPersistentStorage("save", "test_save", "test_config", string(data))
+	})
+
+	if growth > leakTestThreshold {
+		t.Errorf("Persistent storage save leaked memory: %s", humanizeBytes(growth))
 	}
 }

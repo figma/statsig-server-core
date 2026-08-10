@@ -2,8 +2,10 @@ package statsig_go_core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
+	"unsafe"
 
 	"github.com/statsig-io/statsig-go-core/internal"
 )
@@ -17,6 +19,12 @@ type PersistentStorageFunctions struct {
 type PersistentStorage struct {
 	functions PersistentStorageFunctions
 	ref       uint64
+
+	// Load is called synchronously during evaluation, so concurrent
+	// evaluations mean concurrent callbacks. Hold a handful of results rather
+	// than one, so an overlapping load cannot displace a buffer the core has
+	// not read yet. They are a single user's sticky values, so this is cheap.
+	loadResults *internal.ResultKeeper
 }
 
 type SecondaryExposure struct {
@@ -48,14 +56,19 @@ type persistentStorageArgs struct {
 
 func NewPersistentStorage(functions PersistentStorageFunctions) *PersistentStorage {
 	storage := &PersistentStorage{
-		functions: functions,
-		ref:       0,
+		functions:   functions,
+		ref:         0,
+		loadResults: internal.NewResultKeeper(16),
 	}
 
 	storage.ref = GetFFI().persistent_storage_create(
 		"go",
 		// Load
 		func(argsPtr *byte, argsLength uint64) *byte {
+			// The core hands these args over via CString::into_raw, so the
+			// callback owns them and nothing frees them on the Rust side.
+			defer GetFFI().free_string(argsPtr)
+
 			keyStr := internal.GoStringFromPointer(argsPtr, argsLength)
 			if keyStr == nil {
 				return nil
@@ -67,16 +80,21 @@ func NewPersistentStorage(functions PersistentStorageFunctions) *PersistentStora
 				return nil
 			}
 
-			json, err := json.Marshal(*result)
+			encoded, err := json.Marshal(*result)
 			if err != nil {
 				fmt.Println("Error marshalling user persisted values", err)
 				return nil
 			}
 
-			return &json[0]
+			// The core reads this with CStr::from_ptr once the callback has
+			// returned, so it has to be NUL-terminated and it has to still be
+			// reachable from Go.
+			return storage.loadResults.RetainBytes(encoded)
 		},
 		// Save
 		func(argsPtr *byte, argsLength uint64) {
+			defer GetFFI().free_string(argsPtr)
+
 			data, err := tryMarshalPersistentStorageArgs(argsPtr, argsLength)
 			if err != nil {
 				fmt.Println("Error marshalling persistent storage args", err)
@@ -92,6 +110,8 @@ func NewPersistentStorage(functions PersistentStorageFunctions) *PersistentStora
 		},
 		// Delete
 		func(argsPtr *byte, argsLength uint64) {
+			defer GetFFI().free_string(argsPtr)
+
 			data, err := tryMarshalPersistentStorageArgs(argsPtr, argsLength)
 			if err != nil {
 				fmt.Println("Error marshalling persistent storage args", err)
@@ -113,12 +133,15 @@ func (c *PersistentStorage) INTERNAL_testPersistentStorage(action string, key st
 }
 
 func tryMarshalPersistentStorageArgs(inputPtr *byte, inputLength uint64) (*persistentStorageArgs, error) {
-	data := internal.GoStringFromPointer(inputPtr, inputLength)
+	if inputPtr == nil {
+		return nil, errors.New("nil persistent storage args")
+	}
 
+	// Decode straight out of the C buffer. json.Unmarshal neither retains nor
+	// mutates its input and the decoded fields are Go-owned copies, so this
+	// skips two full-size copies of the args.
 	var args persistentStorageArgs
-	err := json.Unmarshal([]byte(*data), &args)
-	if err != nil {
-		fmt.Println("Error unmarshalling persistent storage args", err)
+	if err := json.Unmarshal(unsafe.Slice(inputPtr, inputLength), &args); err != nil {
 		return nil, err
 	}
 
