@@ -112,6 +112,45 @@ func TestMemoryLeak(t *testing.T) {
 	}
 }
 
+const (
+	// Sized so a per-call leak of the payload dwarfs allocator noise without
+	// making the loop slow: the core serializes the args on every call.
+	leakTestPayloadBytes = 512 * 1024
+	leakTestIterations   = 250
+	leakTestThreshold    = 40 * 1024 * 1024
+)
+
+// measureRssGrowth runs call enough times to reach the allocator's high-water
+// mark, then reports how much RSS grows over the same number of calls again.
+// A callback that reclaims what it is handed lands near zero; one that leaks
+// per call keeps climbing.
+func measureRssGrowth(t *testing.T, call func()) int64 {
+	t.Helper()
+
+	for range leakTestIterations {
+		call()
+	}
+
+	triggerGC()
+	before := getRssBytes(t)
+
+	for range leakTestIterations {
+		call()
+	}
+
+	triggerGC()
+	growth := getRssBytes(t) - before
+
+	t.Logf(
+		"RSS grew %s over %d calls carrying %s each",
+		humanizeBytes(growth),
+		leakTestIterations,
+		humanizeBytes(leakTestPayloadBytes),
+	)
+
+	return growth
+}
+
 func triggerGC() {
 	for range 5 {
 		runtime.GC()
