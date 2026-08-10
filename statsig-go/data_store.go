@@ -21,12 +21,19 @@ type DataStoreFunctions struct {
 type DataStore struct {
 	functions DataStoreFunctions
 	ref       uint64
+
+	// A get result is the cached specs - ~18MB for a large project - so hold
+	// exactly one, the way statsig-dotnet does. StatsigDataStoreSpecsAdapter
+	// is the only caller and it reads serially: start(), then one background
+	// sync tick at a time.
+	getResults *internal.ResultKeeper
 }
 
 func NewDataStore(functions DataStoreFunctions) *DataStore {
 	store := &DataStore{
-		functions: functions,
-		ref:       0,
+		functions:  functions,
+		ref:        0,
+		getResults: internal.NewResultKeeper(1),
 	}
 
 	store.ref = GetFFI().data_store_create(
@@ -44,11 +51,18 @@ func NewDataStore(functions DataStoreFunctions) *DataStore {
 				return nil
 			}
 
-			// Rust reads this back with CStr::from_ptr, so it must be
-			// NUL-terminated. The terminator also keeps the slice non-empty,
-			// so a "" from the adapter no longer panics on &result[0].
-			result := append([]byte(store.functions.Get(*keyStr)), 0)
-			return &result[0]
+			result := store.functions.Get(*keyStr)
+			if result == "" {
+				// "" is the only way the adapter can say "no data". Returning
+				// a pointer to it just hands the core an empty string to fail
+				// deserializing; nil is the miss the core already handles.
+				return nil
+			}
+
+			// The core reads this with CStr::from_ptr once the callback has
+			// returned, so it has to be NUL-terminated and it has to still be
+			// reachable from Go.
+			return store.getResults.Retain(result)
 		},
 		// Set
 		func(argPtr *byte, argLength uint64) {
