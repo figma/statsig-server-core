@@ -112,6 +112,34 @@ pub mod data_store_bytes_adapter_tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_string_only_data_store_probes_bytes_once_across_syncs() {
+        let cached_json = dcs_json_with_time_and_checksum(0, "cached-json");
+        // A store with no byte cache refuses get_bytes with BytesNotImplemented,
+        // the way the C FFI shim does, but still serves the string read. It has
+        // to support polling so the adapter runs its own background sync rather
+        // than deferring to the http adapter.
+        let data_store = Arc::new(MockDataStore::new(true));
+        data_store.mock_json_bytes(&cached_json);
+
+        let (_mock_scrapi, statsig) =
+            setup_statsig_with_data_store_http("secret-ds-string-only", data_store.clone()).await;
+
+        let init_details = statsig.initialize_with_details().await.unwrap();
+        assert!(init_details.init_success);
+        assert_eq!(
+            init_details.source,
+            SpecsSource::Adapter("DataStore".to_string())
+        );
+
+        // Background sync keeps reading the string cache every interval...
+        assert_eventually!(|| data_store.num_get_calls() >= 4);
+
+        // ...but get_bytes is probed exactly once. Before the capability latch
+        // every sync re-probed it and logged the fallback warning again.
+        assert_eq!(data_store.num_get_bytes_calls(), 1);
+    }
+
     async fn setup_statsig_with_data_store_http(
         sdk_key: &str,
         data_store: Arc<MockDataStore>,

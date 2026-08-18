@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Notify;
 use tokio::time::{self, sleep};
@@ -24,6 +25,7 @@ const TAG: &str = "StatsigDataStoreSpecsAdapter";
 
 pub struct StatsigDataStoreSpecsAdapter {
     data_store: Arc<dyn DataStoreTrait>,
+    bytes_unsupported: AtomicBool,
     cache_keys: DataStoreCacheKeys,
     sync_interval: Duration,
     ops_stats: Arc<OpsStatsForInstance>,
@@ -48,6 +50,7 @@ impl StatsigDataStoreSpecsAdapter {
 
         StatsigDataStoreSpecsAdapter {
             data_store,
+            bytes_unsupported: AtomicBool::new(false),
             cache_keys: DataStoreCacheKeys::from_selected_key(data_store_key),
             sync_interval: Duration::from_millis(u64::from(
                 options_ref
@@ -153,11 +156,31 @@ impl SpecsAdapter for StatsigDataStoreSpecsAdapter {
 
 impl StatsigDataStoreSpecsAdapter {
     async fn load_cached_specs(&self) -> Result<CachedSpecs, StatsigErr> {
+        // Whether get_bytes works is a static property of the data store
+        // implementation, not a transient failure: the trait's default impl
+        // refuses, and the C FFI shim exposes no bytes hook at all. Once it has
+        // refused, re-probing every sync interval buys nothing but a doomed
+        // call and a repeated warning, so read strings directly instead.
+        if self.bytes_unsupported.load(Ordering::Relaxed) {
+            return self.load_cached_specs_string(None).await;
+        }
+
         if let Some(update) = self.load_statsig_br_cache().await? {
             return Ok(update);
         }
 
         self.load_plain_text_cache().await
+    }
+
+    /// Latches the data store as string-only and returns the error to log on
+    /// the first refusal only, so the fallback is reported once per adapter
+    /// rather than once per sync interval.
+    fn latch_bytes_unsupported(&self, e: StatsigErr) -> Option<StatsigErr> {
+        if self.bytes_unsupported.swap(true, Ordering::Relaxed) {
+            None
+        } else {
+            Some(e)
+        }
     }
 
     async fn load_statsig_br_cache(&self) -> Result<Option<CachedSpecs>, StatsigErr> {
@@ -167,7 +190,8 @@ impl StatsigDataStoreSpecsAdapter {
         {
             Ok(update) => Ok(update),
             Err(e @ StatsigErr::BytesNotImplemented) => {
-                self.load_cached_specs_string(Some(e)).await.map(Some)
+                let bytes_error = self.latch_bytes_unsupported(e);
+                self.load_cached_specs_string(bytes_error).await.map(Some)
             }
             Err(e) => {
                 log_w!(
@@ -191,7 +215,8 @@ impl StatsigDataStoreSpecsAdapter {
                 is_protobuf: false,
             }),
             Err(e @ StatsigErr::BytesNotImplemented) => {
-                self.load_cached_specs_string(Some(e)).await
+                self.load_cached_specs_string(self.latch_bytes_unsupported(e))
+                    .await
             }
             Err(e) => Err(e),
         }
