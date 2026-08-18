@@ -1,6 +1,7 @@
 use chrono::Utc;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::data_store_interface::{DataStoreCacheKeys, DataStoreTrait};
@@ -37,6 +38,7 @@ pub struct SpecStore {
 
     data_store_keys: DataStoreCacheKeys,
     data_store: Option<Arc<dyn DataStoreTrait>>,
+    data_store_bytes_writes: Arc<DataStoreBytesWriteSupport>,
     statsig_runtime: Arc<StatsigRuntime>,
     ops_stats: Arc<OpsStatsForInstance>,
     global_configs: Arc<GlobalConfigs>,
@@ -68,6 +70,7 @@ impl SpecStore {
             })),
             event_emitter,
             data_store,
+            data_store_bytes_writes: Arc::new(DataStoreBytesWriteSupport::default()),
             statsig_runtime,
             ops_stats: OPS_STATS.get_for_instance(sdk_key),
             global_configs: GlobalConfigs::get_instance(sdk_key),
@@ -470,6 +473,8 @@ impl SpecStore {
             self.data_store_keys.plain_text.clone()
         };
 
+        let bytes_writes = self.data_store_bytes_writes.clone();
+
         let spawn_result = self.statsig_runtime.spawn(
             "spec_store_update_data_store",
             move |_shutdown_notif| async move {
@@ -481,8 +486,15 @@ impl SpecStore {
                     }
                 };
 
-                write_specs_to_data_store(data_store, data_store_key, data_bytes, now, is_protobuf)
-                    .await;
+                write_specs_to_data_store(
+                    data_store,
+                    bytes_writes,
+                    data_store_key,
+                    data_bytes,
+                    now,
+                    is_protobuf,
+                )
+                .await;
             },
         );
 
@@ -522,37 +534,77 @@ impl SpecStore {
     }
 }
 
+/// Tracks whether a data store implementation accepts the bytes write API.
+///
+/// `set_bytes` support is a static property of the implementation, not a
+/// transient failure: the trait's default impl refuses, and the C FFI shim
+/// exposes no bytes hook at all. Latching the first refusal keeps the writeback
+/// from paying for a doomed call, and from re-logging the same fallback, on
+/// every specs update. The two log flags are separate so that a protobuf
+/// response still reports its dropped write even when a plain-text response
+/// already reported the string fallback.
+#[derive(Default)]
+struct DataStoreBytesWriteSupport {
+    unsupported: AtomicBool,
+    logged_string_fallback: AtomicBool,
+    logged_protobuf_skip: AtomicBool,
+}
+
+impl DataStoreBytesWriteSupport {
+    fn is_unsupported(&self) -> bool {
+        self.unsupported.load(Ordering::Relaxed)
+    }
+
+    fn latch_unsupported(&self) {
+        self.unsupported.store(true, Ordering::Relaxed);
+    }
+
+    fn should_log_string_fallback(&self) -> bool {
+        !self.logged_string_fallback.swap(true, Ordering::Relaxed)
+    }
+
+    fn should_log_protobuf_skip(&self) -> bool {
+        !self.logged_protobuf_skip.swap(true, Ordering::Relaxed)
+    }
+}
+
 async fn write_specs_to_data_store(
     data_store: Arc<dyn DataStoreTrait>,
+    bytes_writes: Arc<DataStoreBytesWriteSupport>,
     data_store_key: String,
     data_bytes: Vec<u8>,
     now: u64,
     is_protobuf: bool,
 ) {
-    match data_store
-        .set_bytes(&data_store_key, &data_bytes, Some(now))
-        .await
-    {
-        Ok(()) => return,
-        Err(e @ StatsigErr::BytesNotImplemented) if is_protobuf => {
+    if !bytes_writes.is_unsupported() {
+        match data_store
+            .set_bytes(&data_store_key, &data_bytes, Some(now))
+            .await
+        {
+            Ok(()) => return,
+            Err(StatsigErr::BytesNotImplemented) => bytes_writes.latch_unsupported(),
+            Err(e) => {
+                log_w!(TAG, "Failed to write specs to data store as bytes: {}", e);
+                return;
+            }
+        }
+    }
+
+    if is_protobuf {
+        if bytes_writes.should_log_protobuf_skip() {
             log_w!(
                 TAG,
-                "Failed to write protobuf specs to data store as bytes. Protobuf specs cannot fall back to string writes: {}",
-                e
-            );
-            return;
-        }
-        Err(e @ StatsigErr::BytesNotImplemented) => {
-            log_w!(
-                TAG,
-                "Data store bytes write is not implemented. Falling back to string write: {}",
-                e
+                "Data store bytes write is not implemented. Protobuf specs cannot fall back to string writes, so they will not be cached"
             );
         }
-        Err(e) => {
-            log_w!(TAG, "Failed to write specs to data store as bytes: {}", e);
-            return;
-        }
+        return;
+    }
+
+    if bytes_writes.should_log_string_fallback() {
+        log_w!(
+            TAG,
+            "Data store bytes write is not implemented. Falling back to string writes"
+        );
     }
 
     let data_string = match String::from_utf8(data_bytes) {
