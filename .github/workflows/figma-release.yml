@@ -21,6 +21,12 @@ jobs:
       - name: Cross-build statsig_ffi cdylib (linux-gnu/x86_64)
         run: cross build --release --target x86_64-unknown-linux-gnu -p statsig_ffi
 
+      - name: Cross-build statsig_ffi cdylib (linux-gnu/aarch64)
+        # The CentOS cross compiler predates GCC's __ARM_ARCH definition.
+        env:
+          CFLAGS: -D__ARM_ARCH=8
+        run: cross build --locked --release --target aarch64-unknown-linux-gnu -p statsig_ffi
+
       - name: Publish binaries module at paired tag
         env:
           SOURCE_TAG: ${{ github.ref_name }}
@@ -38,7 +44,10 @@ jobs:
           cp "$GITHUB_WORKSPACE/target/x86_64-unknown-linux-gnu/release/libstatsig_ffi.so" \
              binaries-linux-gnu/linux_gnu_x86_64.so
 
-          git add binaries-linux-gnu/linux_gnu_x86_64.so
+          cp "$GITHUB_WORKSPACE/target/aarch64-unknown-linux-gnu/release/libstatsig_ffi.so" \
+             binaries-linux-gnu/linux_gnu_aarch64.so
+
+          git add binaries-linux-gnu/linux_gnu_x86_64.so binaries-linux-gnu/linux_gnu_aarch64.so
           git commit -m "release: binaries-linux-gnu ${PAIRED_TAG}"
           git tag "$PAIRED_TAG"
           git push origin "$PAIRED_TAG"
