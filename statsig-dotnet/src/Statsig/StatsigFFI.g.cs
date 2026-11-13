@@ -79,6 +79,13 @@ namespace Statsig
         [DllImport(__DllName, EntryPoint = "statsig_get_current_values", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern byte* statsig_get_current_values(ulong statsig_ref);
 
+        /// <summary>
+        ///  Returns owned inventory JSON, or null on an invalid instance, read failure, or
+        ///  serialization failure. The caller must release the result with free_string.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "statsig_get_inventory_snapshot_with_inout_len", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern byte* statsig_get_inventory_snapshot_with_inout_len(ulong statsig_ref, ulong* inout_len);
+
         [DllImport(__DllName, EntryPoint = "statsig_log_event", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern void statsig_log_event(ulong statsig_ref, ulong user_ref, byte* event_json);
 

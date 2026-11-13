@@ -99,6 +99,12 @@ void statsig_flush_events_blocking(uint64_t statsig_ref);
 
 char *statsig_get_current_values(uint64_t statsig_ref);
 
+/**
+ * Returns owned inventory JSON, or null on an invalid instance, read failure, or
+ * serialization failure. The caller must release the result with free_string.
+ */
+char *statsig_get_inventory_snapshot_with_inout_len(uint64_t statsig_ref, uint64_t *inout_len);
+
 void statsig_log_event(uint64_t statsig_ref, uint64_t user_ref, const char *event_json);
 
 void statsig_identify(uint64_t statsig_ref, uint64_t user_ref);

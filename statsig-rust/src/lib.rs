@@ -10,6 +10,7 @@ pub use id_lists_adapter::{IdListsAdapter, StatsigHttpIdListsAdapter};
 pub use init_details::{FailureDetails, InitializeDetails};
 pub use initialize_response::InitializeResponse;
 pub use instance_registry::InstanceRegistry;
+pub use inventory::{Inventory, InventorySnapshot, InventorySource};
 pub use observability::{
     observability_client_adapter::ObservabilityClient, ops_stats::OpsStatsEventObserver,
     ops_stats::OPS_STATS,
@@ -70,6 +71,7 @@ mod id_lists_adapter;
 mod initialize_evaluations_response;
 mod initialize_response;
 mod initialize_v2_response;
+mod inventory;
 mod observability;
 mod persistent_storage;
 mod spec_store;

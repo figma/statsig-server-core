@@ -15,11 +15,12 @@ use crate::observability::sdk_errors_observer::ErrorBoundaryEvent;
 use crate::sdk_event_emitter::{SdkEvent, SdkEventEmitter};
 use crate::specs_response::proto_specs::deserialize_protobuf;
 use crate::specs_response::spec_types::{SpecsResponseFull, SpecsResponseNoUpdates};
+use crate::specs_response::specs_hash_map::SpecsHashMap;
 use crate::utils::try_release_unused_heap_memory;
 use crate::{
     log_d, log_e, log_error_to_statsig_and_console, log_w, read_lock_or_else, write_lock_or_else,
-    SpecsFormat, SpecsInfo, SpecsSource, SpecsUpdate, SpecsUpdateListener, StatsigErr,
-    StatsigOptions, StatsigRuntime,
+    Inventory, InventorySnapshot, InventorySource, SpecsFormat, SpecsInfo, SpecsSource,
+    SpecsUpdate, SpecsUpdateListener, StatsigErr, StatsigOptions, StatsigRuntime,
 };
 
 pub struct SpecStoreData {
@@ -92,6 +93,41 @@ impl SpecStore {
 
         let json = serde_json::to_string(&data.values).ok()?;
         serde_json::from_str::<SpecsResponseFull>(&json).ok()
+    }
+
+    pub fn get_inventory_snapshot(&self) -> Result<InventorySnapshot, StatsigErr> {
+        let data = read_lock_or_else!(self.data, {
+            return Err(StatsigErr::LockFailure(
+                "Reading inventory snapshot".to_string(),
+            ));
+        });
+
+        let names_and_apps = |specs: &SpecsHashMap| {
+            specs
+                .iter()
+                .map(|(name, spec)| {
+                    let apps = spec.as_spec_ref().target_app_ids.as_ref().map(|ids| {
+                        ids.iter()
+                            .map(InternedString::unperformant_to_string)
+                            .collect()
+                    });
+                    (name.unperformant_to_string(), apps)
+                })
+                .collect()
+        };
+
+        let loaded = data.time_received_at.is_some();
+        Ok(InventorySnapshot {
+            loaded,
+            source: InventorySource::from(&data.source),
+            config_time: data.time_received_at.map(|_| data.values.time),
+            checksum: data.values.checksum.clone(),
+            accepted_at: data.time_received_at,
+            inventory: loaded.then(|| Inventory {
+                feature_gates: names_and_apps(&data.values.feature_gates),
+                dynamic_configs: names_and_apps(&data.values.dynamic_configs),
+            }),
+        })
     }
 
     pub fn get_fields_used_for_entity(
