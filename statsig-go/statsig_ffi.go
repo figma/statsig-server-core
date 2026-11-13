@@ -13,6 +13,10 @@ import (
 type StatsigFFI struct {
 	lib uintptr
 
+	inventoryOnce                                 sync.Once
+	inventoryError                                error
+	statsig_get_inventory_snapshot_with_inout_len func(uint64, *uint64) *byte
+
 	// StatsigOptions
 	statsig_options_create_from_data func(string) uint64
 	statsig_options_release          func(uint64)
@@ -110,13 +114,13 @@ type StatsigFFI struct {
 	free_string func(*byte)
 
 	// Parameter Store
-	statsig_get_parameter_store_with_options             func(uint64, string, string, *uint64) *byte
-	statsig_get_string_parameter_from_parameter_store    func(uint64, uint64, string, string, string, string, *uint64) *byte
-	statsig_get_bool_parameter_from_parameter_store      func(uint64, uint64, string, string, int32, string) bool
-	statsig_get_float64_parameter_from_parameter_store   func(uint64, uint64, string, string, float64, string) float64
-	statsig_get_int_parameter_from_parameter_store       func(uint64, uint64, string, string, int64, string) int64
-	statsig_get_object_parameter_from_parameter_store    func(uint64, uint64, string, string, string, string, *uint64) *byte
-	statsig_get_array_parameter_from_parameter_store     func(uint64, uint64, string, string, string, string, *uint64) *byte
+	statsig_get_parameter_store_with_options           func(uint64, string, string, *uint64) *byte
+	statsig_get_string_parameter_from_parameter_store  func(uint64, uint64, string, string, string, string, *uint64) *byte
+	statsig_get_bool_parameter_from_parameter_store    func(uint64, uint64, string, string, int32, string) bool
+	statsig_get_float64_parameter_from_parameter_store func(uint64, uint64, string, string, float64, string) float64
+	statsig_get_int_parameter_from_parameter_store     func(uint64, uint64, string, string, int64, string) int64
+	statsig_get_object_parameter_from_parameter_store  func(uint64, uint64, string, string, string, string, *uint64) *byte
+	statsig_get_array_parameter_from_parameter_store   func(uint64, uint64, string, string, string, string, *uint64) *byte
 }
 
 var (
