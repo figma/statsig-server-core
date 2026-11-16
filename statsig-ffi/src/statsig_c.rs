@@ -233,6 +233,25 @@ pub extern "C" fn statsig_get_current_values(statsig_ref: u64) -> *mut c_char {
     string_to_c_char(data)
 }
 
+/// Returns owned inventory JSON, or null on an invalid instance, read failure, or
+/// serialization failure. The caller must release the result with free_string.
+#[no_mangle]
+pub extern "C" fn statsig_get_inventory_snapshot_with_inout_len(
+    statsig_ref: u64,
+    inout_len: *mut u64,
+) -> *mut c_char {
+    let statsig = get_instance_or_return_c!(Statsig, &statsig_ref, null_mut());
+    let snapshot = match statsig.get_inventory_snapshot() {
+        Ok(snapshot) => snapshot,
+        Err(_) => return null_mut(),
+    };
+    // The SpecStore lock has been released before serializing the owned metadata.
+    match serde_json::to_string(&snapshot) {
+        Ok(json) => string_to_c_char_with_inout_len(json, inout_len),
+        Err(_) => null_mut(),
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn statsig_log_event(statsig_ref: u64, user_ref: u64, event_json: *const c_char) {
     let statsig = get_instance_or_noop_c!(Statsig, &statsig_ref);

@@ -1,0 +1,71 @@
+{
+  "time": 1000,
+  "checksum": "inventory-a",
+  "has_updates": true,
+  "condition_map": {},
+  "experiment_to_layer": {},
+  "layer_configs": {},
+  "feature_gates": {
+    "shared": {
+      "type": "feature_gate",
+      "entity": "feature_gate",
+      "salt": "private-gate-salt",
+      "enabled": true,
+      "defaultValue": true,
+      "rules": [],
+      "idType": "userID",
+      "targetAppIDs": ["web", "ios-☕"]
+    },
+    "removed_gate": {
+      "type": "feature_gate",
+      "entity": "feature_gate",
+      "salt": "private-gate-salt",
+      "enabled": true,
+      "defaultValue": false,
+      "rules": [],
+      "idType": "userID",
+      "targetAppIDs": ["web"]
+    },
+    "segment:audience": {
+      "type": "feature_gate",
+      "entity": "segment",
+      "salt": "private-segment-salt",
+      "enabled": true,
+      "defaultValue": false,
+      "rules": [],
+      "idType": "userID"
+    }
+  },
+  "dynamic_configs": {
+    "shared": {
+      "type": "dynamic_config",
+      "entity": "dynamic_config",
+      "salt": "private-config-salt",
+      "enabled": true,
+      "defaultValue": {"private_parameter": "not-in-inventory"},
+      "rules": [],
+      "idType": "userID",
+      "targetAppIDs": []
+    },
+    "experiment": {
+      "type": "dynamic_config",
+      "entity": "experiment",
+      "salt": "private-experiment-salt",
+      "enabled": true,
+      "defaultValue": {},
+      "rules": [],
+      "idType": "userID",
+      "targetAppIDs": ["web"]
+    },
+    "null_apps": {
+      "type": "dynamic_config",
+      "entity": "dynamic_config",
+      "salt": "private-config-salt",
+      "enabled": true,
+      "defaultValue": {},
+      "rules": [],
+      "idType": "userID",
+      "targetAppIDs": null
+    }
+  }
+}

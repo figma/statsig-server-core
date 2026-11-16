@@ -1124,6 +1124,11 @@ impl Statsig {
 // ------------------------------------------------------------------------------- [ Debugging ]
 
 impl Statsig {
+    /// Copies metadata from one accepted configuration without evaluating or logging exposures.
+    pub fn get_inventory_snapshot(&self) -> Result<crate::InventorySnapshot, StatsigErr> {
+        self.spec_store.get_inventory_snapshot()
+    }
+
     pub fn get_feature_gate_list(&self) -> Vec<String> {
         self.spec_store
             .unperformant_keys_entity_filter("feature_gates", "feature_gate")

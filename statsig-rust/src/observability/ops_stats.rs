@@ -226,6 +226,8 @@ impl Drop for OpsStatsForInstance {
     }
 }
 
+// async-trait adds #[must_use] to futures that already carry it.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait OpsStatsEventObserver: Send + Sync + 'static {
     async fn handle_event(&self, event: OpsStatsEvent);

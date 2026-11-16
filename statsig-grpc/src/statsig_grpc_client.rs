@@ -14,6 +14,8 @@ pub struct StatsigGrpcClient {
     tls_config: Option<ClientTlsConfig>,
 }
 
+// Preserve tonic::Status in the public error type despite its size.
+#[allow(clippy::result_large_err)]
 impl StatsigGrpcClient {
     pub fn new(
         sdk_key: &str,

@@ -68,6 +68,8 @@ impl DataStoreCacheKeys {
     }
 }
 
+// async-trait adds #[must_use] to futures that already carry it.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait DataStoreTrait: Send + Sync {
     async fn initialize(&self) -> Result<(), StatsigErr>;

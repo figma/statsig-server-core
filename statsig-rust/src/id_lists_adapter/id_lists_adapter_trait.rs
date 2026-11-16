@@ -25,6 +25,8 @@ pub struct IdListUpdate {
     pub new_metadata: IdListMetadata,
 }
 
+// async-trait adds #[must_use] to futures that already carry it.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait IdListsAdapter: Send + Sync {
     /// Called during Statsig::initialize. Mostly to attach the listener.

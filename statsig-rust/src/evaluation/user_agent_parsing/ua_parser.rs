@@ -42,13 +42,8 @@ impl UserAgentParser {
             _ => return None,
         };
 
-        let user_agent = match user.get_user_value(&USER_AGENT_STRING) {
-            Some(v) => match &v.string_value {
-                Some(s) => &s.value,
-                _ => return None,
-            },
-            None => return None,
-        };
+        let user_agent_value = user.get_user_value(&USER_AGENT_STRING)?;
+        let user_agent = &user_agent_value.string_value.as_ref()?.value;
 
         if user_agent.len() > 1000 {
             return None;
