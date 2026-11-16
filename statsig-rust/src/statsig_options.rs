@@ -198,10 +198,7 @@ impl StatsigOptionsBuilder {
     }
 
     #[must_use]
-    pub fn exposure_dedupe_max_keys(
-        mut self,
-        exposure_dedupe_max_keys: Option<usize>,
-    ) -> Self {
+    pub fn exposure_dedupe_max_keys(mut self, exposure_dedupe_max_keys: Option<usize>) -> Self {
         self.inner.exposure_dedupe_max_keys = exposure_dedupe_max_keys;
         self
     }

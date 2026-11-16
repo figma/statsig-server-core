@@ -69,12 +69,9 @@ impl ExposureSampling {
 
         // Clamp user-provided value to a non-zero usize; fall back to the
         // historical default `SAMPLING_MAX_KEYS` for `None` or `Some(0)`.
-        let cap = max_keys
-            .and_then(NonZeroUsize::new)
-            .unwrap_or_else(|| {
-                NonZeroUsize::new(SAMPLING_MAX_KEYS)
-                    .expect("SAMPLING_MAX_KEYS must be non-zero")
-            });
+        let cap = max_keys.and_then(NonZeroUsize::new).unwrap_or_else(|| {
+            NonZeroUsize::new(SAMPLING_MAX_KEYS).expect("SAMPLING_MAX_KEYS must be non-zero")
+        });
 
         Self {
             spec_sampling_set: RwLock::from(AHashSet::default()),

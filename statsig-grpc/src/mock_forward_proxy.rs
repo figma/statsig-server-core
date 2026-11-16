@@ -11,6 +11,8 @@ use tonic::codegen::tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
+// Tonic generates Status-returning methods and boxed async-trait futures.
+#[allow(clippy::result_large_err, clippy::double_must_use)]
 pub mod api {
     tonic::include_proto!("statsig_forward_proxy");
 }
