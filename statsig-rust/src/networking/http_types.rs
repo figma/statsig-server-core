@@ -107,6 +107,8 @@ pub enum HttpMethod {
     POST,
 }
 
+// async-trait adds #[must_use] to futures that already carry it.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait NetworkProvider: Sync + Send {
     async fn send(&self, method: &HttpMethod, args: &RequestArgs) -> Response;

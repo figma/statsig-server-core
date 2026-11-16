@@ -78,6 +78,8 @@ impl fmt::Display for SpecsSource {
     }
 }
 
+// async-trait adds #[must_use] to futures that already carry it.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait SpecsAdapter: Send + Sync {
     fn initialize(&self, listener: Arc<dyn SpecsUpdateListener>);
