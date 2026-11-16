@@ -244,7 +244,9 @@ func (m *MockScrapi) tryAddEvents(body []byte) {
 		events_map[i] = event.(map[string]any)
 	}
 
+	m.mu.Lock()
 	m.events = append(m.events, events_map...)
+	m.mu.Unlock()
 }
 
 func cloneHeader(h http.Header) http.Header {
